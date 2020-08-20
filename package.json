@@ -1,0 +1,19 @@
+{
+  "name": "stalker-coverage-test",
+  "version": "1.0.0",
+  "description": "Test application using stalker coverage library",
+  "private": true,
+  "main": "agent/test.ts",
+  "scripts": {
+    "prepare": "npm run build",
+    "lint": "tslint -p tslint.json",
+    "build": "frida-compile agent/test.ts -o ../../bin/test.js"
+  },
+  "devDependencies": {
+    "@types/frida-gum": "^16.1.0",
+    "@types/node": "^14.0.14",
+    "frida-compile": "^9.3.0",
+    "typescript-tslint-plugin": "^0.5.5",
+    "tslint": "^6.1.3"
+  }
+}
