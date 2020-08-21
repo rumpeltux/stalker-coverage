@@ -1,10 +1,6 @@
-// tslint:disable-next-line: typedef
 const BITS_PER_BYTE = 8;
-// tslint:disable-next-line: typedef
 const BYTES_PER_U16 = 2;
-// tslint:disable-next-line: typedef
 const BYTES_PER_U32 = 4;
-// tslint:disable-next-line: typedef
 const BYTE_MASK = 0xFF;
 
 /**
@@ -13,12 +9,10 @@ const BYTE_MASK = 0xFF;
  * @param data The string to convert
  * @returns An array buffer containing the raw string data
  */
-const convertString: (data: string) => ArrayBuffer =
-    (data: string): ArrayBuffer => {
-        const buf: ArrayBuffer = new ArrayBuffer(data.length);
-        const view: Uint8Array = new Uint8Array(buf);
-        let i: number;
-        for (i = 0; i < data.length; i += 1) {
+const convertString = (data: string): ArrayBuffer => {
+        const buf = new ArrayBuffer(data.length);
+        const view = new Uint8Array(buf);
+        for (let i = 0; i < data.length; i += 1) {
             view[i] = data.charCodeAt(i);
         }
 
@@ -33,12 +27,11 @@ const convertString: (data: string) => ArrayBuffer =
  * @param pad The value which should be prepended to the string until it is the requested length
  * @returns The padded input string, padding to the requested length
  */
-const padStart: (data: string, length: number, pad: string) => string =
-    (data: string, length: number, pad: string): string => {
-        const paddingLength: number = length - data.length;
-        const partialPadLength: number = paddingLength % pad.length;
-        const fullPads: number = paddingLength - partialPadLength / pad.length;
-        const result: string = pad.repeat(fullPads) + pad.substring(0, partialPadLength)
+const padStart = (data: string, length: number, pad: string): string => {
+        const paddingLength = length - data.length;
+        const partialPadLength = paddingLength % pad.length;
+        const fullPads = paddingLength - partialPadLength / pad.length;
+        const result = pad.repeat(fullPads) + pad.substring(0, partialPadLength)
             + data;
 
         return result;
@@ -51,8 +44,7 @@ const padStart: (data: string, length: number, pad: string) => string =
  * @param address The address at which to write the value
  * @param value The value to be written
  */
-const write16le: (address: NativePointer, value: number) => void =
-    (address: NativePointer, value: number): void => {
+const write16le = (address: NativePointer, value: number): void => {
         let i: number;
         for (i = 0; i < BYTES_PER_U16; i += 1) {
             // tslint:disable-next-line:no-bitwise
@@ -69,8 +61,7 @@ const write16le: (address: NativePointer, value: number) => void =
  * @param address The address at which to write the value
  * @param value The value to be written
  */
-const write32le: (address: NativePointer, value: number) => void =
-    (address: NativePointer, value: number): void => {
+const write32le = (address: NativePointer, value: number): void => {
         let i: number;
         for (i = 0; i < BYTES_PER_U32; i += 1) {
             // tslint:disable-next-line:no-bitwise

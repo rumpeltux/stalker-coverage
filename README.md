@@ -39,9 +39,7 @@ $ npm install --save stalker-coverage
 ## Using Stalker-Coverage
 We can then interact with this module using the following typescript code:
 ```typescript
-import { Coverage } from "./coverage";
-import { CoverageOptions } from "./options";
-
+import { Coverage } from "../node_modules/stalker-coverage/dist/coverage";
 /*
  * This sample replaces the 'main' function of the target application with one which starts
  * collecting coverage information, before calling the original 'main' function. Once the
@@ -54,19 +52,19 @@ import { CoverageOptions } from "./options";
  * The address of the symbol 'main' which is to be used as the start and finish point to
  * collect coverage information.
  */
-const mainAddress: NativePointer = DebugSymbol.fromName("main").address;
+const mainAddress = DebugSymbol.fromName("main").address;
 
 /**
  * The main module for the program for which we will collect coverage information (we will
  * not collect coverage information for any library dependencies).
  */
-const mainModule: Module = Process.enumerateModules()[0];
+const mainModule = Process.enumerateModules()[0];
 
 /*
  * A NativeFunction type for the 'main' function which will be used to call the original
  * function.
  */
-const mainFunctionPointer: NativeFunction = new NativeFunction(
+const mainFunctionPointer = new NativeFunction(
     mainAddress,
     "int",
     ["int", "pointer"],
@@ -75,26 +73,26 @@ const mainFunctionPointer: NativeFunction = new NativeFunction(
 /*
  * A function to be used to replace the 'main' function. This function will start collecting
  * coverage information before calling the original 'main' function. Once this function
- * returns, the coverage collection will be stopped and flushed. Note that we cannot use 
+ * returns, the coverage collection will be stopped and flushed. Note that we cannot use
  * Interceptor.attach here, since this interferes with Stalker (which is used to provide the
  * coverage data).
  */
-const mainReplacement: NativeCallback = new NativeCallback(
-    (argc: number, argv: NativePointer): number => {
-        const coverageFileName: string = `${mainModule.path}.dat`;
-        const coverageFile: File = new File(coverageFileName, "wb+");
+const mainReplacement = new NativeCallback(
+    (argc, argv) => {
+        const coverageFileName = `${mainModule.path}.dat`;
+        const coverageFile = new File(coverageFileName, "wb+");
 
-        Coverage.follow(Process.id, {
-            moduleFilter: (module: Module): boolean => module.path === mainModule.path,
-            onCoverage: (coverageData: ArrayBuffer): void => {
+        const coverage = Coverage.start({
+            moduleFilter: (m) => Coverage.MainModule(m),
+            onCoverage: (coverageData) => {
                 coverageFile.write(coverageData);
-                coverageFile.flush();
-            }});
+            },
+            threadFilter: (t) => Coverage.CurrentThread(t),
+        });
 
-        const ret: number = mainFunctionPointer(argc, argv) as number;
+        const ret = mainFunctionPointer(argc, argv) as number;
 
-        Coverage.unfollow();
-        Coverage.flush();
+        coverage.stop();
         coverageFile.close();
 
         return ret;

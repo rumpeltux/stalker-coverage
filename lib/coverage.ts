@@ -35,16 +35,24 @@ class Coverage implements CoverageSession {
     }
 
     /**
+     * Module filter which selects only the main module
+     * @param module The module to filter
+     */
+    public static MainModule(module: Module): boolean {
+        return Process.enumerateModules()[0].path === module.path;
+    }
+
+    /**
      * Starts collecting coverage information for the given thread.
      *
      * @param options Options to customize the instrumentation.
      */
-    public static follow(options: CoverageOptions): CoverageSession {
-        const moduleFilter: ModuleMapFilter = (m: Module): boolean => options.moduleFilter(m);
-        const threadFilter: ThreadFilter = (t: ThreadDetails): boolean => options.threadFilter(t);
+    public static start(options: CoverageOptions): CoverageSession {
+        const moduleFilter = (m: Module) => options.moduleFilter(m);
+        const threadFilter = (t: ThreadDetails) => options.threadFilter(t);
 
-        const coverage: Coverage = new Coverage(
-            (coverageData: ArrayBuffer): void => {
+        const coverage = new Coverage(
+            (coverageData) => {
                 options.onCoverage(coverageData);
             },
             moduleFilter,
@@ -54,71 +62,63 @@ class Coverage implements CoverageSession {
     }
 
     /**
-     * Module filter which selects only the main module
-     * @param module The module to filter
-     */
-    public static MainModule(module: Module): boolean {
-        return Process.enumerateModules()[0].path === module.path;
-    }
-
-    /**
      * The fixed character width of the module base field output for each module in the coverage header.
      */
-    private static readonly COLUMN_WIDTH_MODULE_BASE: number = 16;
+    private static readonly COLUMN_WIDTH_MODULE_BASE = 16;
     /**
      * The fixed character width of the module checksum field output for each module in the coverage header.
      */
-    private static readonly COLUMN_WIDTH_MODULE_CHECKSUM: number = 16;
+    private static readonly COLUMN_WIDTH_MODULE_CHECKSUM = 16;
     /**
      * The fixed character width of the module end field output for each module in the coverage header.
      */
-    private static readonly COLUMN_WIDTH_MODULE_END: number = 16;
+    private static readonly COLUMN_WIDTH_MODULE_END = 16;
     /**
      * The fixed character width of the module entry field output for each module in the coverage header.
      */
-    private static readonly COLUMN_WIDTH_MODULE_ENTRY: number = 16;
+    private static readonly COLUMN_WIDTH_MODULE_ENTRY = 16;
     /**
      * The fixed character width of the module id field output for each module in the coverage header.
      */
-    private static readonly COLUMN_WIDTH_MODULE_ID: number = 3;
+    private static readonly COLUMN_WIDTH_MODULE_ID = 3;
     /**
      * The fixed character width of the module timestamp field output for each module in the coverage header.
      */
-    private static readonly COLUMN_WIDTH_MODULE_TIMESTAMP: number = 8;
+    private static readonly COLUMN_WIDTH_MODULE_TIMESTAMP = 8;
 
     /**
      * The array index of the compile event end field in the StalkerCompileEventFull
      */
-    private static readonly COMPILE_EVENT_END_INDEX: number = 2;
+    private static readonly COMPILE_EVENT_END_INDEX = 2;
     /**
      * The array index of the compile event start field in the StalkerCompileEventFull
      */
-    private static readonly COMPILE_EVENT_START_INDEX: number = 1;
+    private static readonly COMPILE_EVENT_START_INDEX = 1;
     /**
      * The value of the type field in the StalkerCompileEventFull
      */
-    private static readonly COMPILE_EVENT_TYPE: string = "compile";
+    private static readonly COMPILE_EVENT_TYPE = "compile";
     /**
      * The array index of the compile event type field in the StalkerCompileEventFull
      */
-    private static readonly COMPILE_EVENT_TYPE_INDEX: number = 0;
+    private static readonly COMPILE_EVENT_TYPE_INDEX = 0;
 
     /**
      * The byte offset of the module id field within the DRCOV event structure
      */
-    private static readonly EVENT_MODULE_OFFSET: number = 6;
+    private static readonly EVENT_MODULE_OFFSET = 6;
     /**
      * The byte offset of the size field within the DRCOV event structure
      */
-    private static readonly EVENT_SIZE_OFFSET: number = 4;
+    private static readonly EVENT_SIZE_OFFSET = 4;
     /**
      * The byte offset of the start field within the DRCOV event structure
      */
-    private static readonly EVENT_START_OFFSET: number = 0;
+    private static readonly EVENT_START_OFFSET = 0;
     /**
      * The total size in bytes of the DRCOV event structure
      */
-    private static readonly EVENT_TOTAL_SIZE: number = 8;
+    private static readonly EVENT_TOTAL_SIZE = 8;
 
     /**
      * The function passed in the 'onCoverage' property in the options used to receive coverage information
@@ -136,7 +136,7 @@ class Coverage implements CoverageSession {
 
     private constructor(emit: Emitter, moduleFilter: ModuleMapFilter, threadFilter: ThreadFilter) {
         this.emit = emit;
-        const map: ModuleMap = new ModuleMap((m: Module): boolean => {
+        const map = new ModuleMap((m) => {
                 if (moduleFilter(m)) {
                     return true;
                 }
@@ -150,28 +150,28 @@ class Coverage implements CoverageSession {
         this.threads = Process.enumerateThreads()
             .filter(threadFilter);
 
-        const stalkerOptions: StalkerOptions = {
+        const stalkerOptions = {
             events: {
                 compile: true,
             },
-            onReceive: (events: ArrayBuffer): void => {
-                const parsed: StalkerEventFull[] = Stalker.parse(events, {
+            onReceive: (events: ArrayBuffer) => {
+                const parsed = Stalker.parse(events, {
                         annotate: true,
                         stringify: false,
                     }) as StalkerEventFull[];
 
-                parsed.forEach((e: StalkerEventFull): void => {
+                parsed.forEach((e) => {
                     const type: string = e[Coverage.COMPILE_EVENT_TYPE_INDEX] as string;
                     if (type.toString() === Coverage.COMPILE_EVENT_TYPE.toString()) {
-                        const start: NativePointer = e[Coverage.COMPILE_EVENT_START_INDEX] as NativePointer;
-                        const end: NativePointer = e[Coverage.COMPILE_EVENT_END_INDEX]  as NativePointer;
+                        const start = e[Coverage.COMPILE_EVENT_START_INDEX] as NativePointer;
+                        const end = e[Coverage.COMPILE_EVENT_END_INDEX]  as NativePointer;
                         this.emitEvent(start, end);
                     }
                 });
             },
         };
         this.emitHeader();
-        this.threads.forEach((t: ThreadDetails): void => {
+        this.threads.forEach((t) => {
             Stalker.follow(t.id, stalkerOptions);
         });
     }
@@ -180,7 +180,7 @@ class Coverage implements CoverageSession {
      * Stop the collection of coverage data
      */
     public stop(): void {
-        this.threads.forEach((t: ThreadDetails): void => {
+        this.threads.forEach((t) => {
             Stalker.unfollow(t.id);
         });
         Stalker.flush();
@@ -194,11 +194,10 @@ class Coverage implements CoverageSession {
      * @param end The address of the end of the compile block.
      */
     private emitEvent(start: NativePointer, end: NativePointer): void {
-        let i: number;
-        for (i = 0; i < this.modules.length; i += 1) {
-            const base: NativePointer = this.modules[i].base;
-            const size: number = this.modules[i].size;
-            const limit: NativePointer = base.add(size);
+        for (let i = 0; i < this.modules.length; i += 1) {
+            const base = this.modules[i].base;
+            const size = this.modules[i].size;
+            const limit = base.add(size);
 
             if (start.compare(base) < 0) {
                 continue;
@@ -208,10 +207,10 @@ class Coverage implements CoverageSession {
                 continue;
             }
 
-            const offset: number = start.sub(base)
+            const offset = start.sub(base)
                 .toInt32();
 
-            const length: number = end.sub(start)
+            const length = end.sub(start)
                 .toInt32();
 
             /*
@@ -221,12 +220,12 @@ class Coverage implements CoverageSession {
              *     guint16 mod_id;
              * };
              */
-            const memory: NativePointer = Memory.alloc(Coverage.EVENT_TOTAL_SIZE);
+            const memory = Memory.alloc(Coverage.EVENT_TOTAL_SIZE);
             write32le(memory.add(Coverage.EVENT_START_OFFSET), offset);
             write16le(memory.add(Coverage.EVENT_SIZE_OFFSET), length);
             write16le(memory.add(Coverage.EVENT_MODULE_OFFSET), i);
 
-            const buf: ArrayBuffer = ArrayBuffer.wrap(memory, Coverage.EVENT_TOTAL_SIZE);
+            const buf = ArrayBuffer.wrap(memory, Coverage.EVENT_TOTAL_SIZE);
             this.emit(buf);
             break;
         }
@@ -262,26 +261,26 @@ class Coverage implements CoverageSession {
      * @param module The module information
      */
     private emitModule(idx: number, module: Module): void {
-        const moduleId: string = padStart(idx.toString(), Coverage.COLUMN_WIDTH_MODULE_ID, " ");
+        const moduleId = padStart(idx.toString(), Coverage.COLUMN_WIDTH_MODULE_ID, " ");
 
-        let base: string = module.base
+        let base = module.base
             .toString(16);
         base = padStart(base, Coverage.COLUMN_WIDTH_MODULE_BASE, "0");
 
-        let end: string = module.base
+        let end = module.base
             .add(module.size)
             .toString(16);
         end = padStart(end, Coverage.COLUMN_WIDTH_MODULE_END, "0");
 
-        const entry: string = "0".repeat(Coverage.COLUMN_WIDTH_MODULE_ENTRY);
-        const checksum: string = "0".repeat(Coverage.COLUMN_WIDTH_MODULE_CHECKSUM);
-        const timeStamp: string = "0".repeat(Coverage.COLUMN_WIDTH_MODULE_TIMESTAMP);
-        const path: string = module.path;
-        const elements: string[] = [moduleId, base, end, entry, checksum, timeStamp, path];
-        const line: string = elements.join(", ");
+        const entry = "0".repeat(Coverage.COLUMN_WIDTH_MODULE_ENTRY);
+        const checksum = "0".repeat(Coverage.COLUMN_WIDTH_MODULE_CHECKSUM);
+        const timeStamp = "0".repeat(Coverage.COLUMN_WIDTH_MODULE_TIMESTAMP);
+        const path = module.path;
+        const elements = [moduleId, base, end, entry, checksum, timeStamp, path];
+        const line = elements.join(", ");
         this.emit(convertString(line));
         this.emit(convertString("\n"));
     }
 }
 
-export { Coverage };
+export { Coverage, CoverageOptions, CoverageSession };
