@@ -1,95 +1,64 @@
 import { CoverageOptions } from "./options";
+import { CoverageSession } from "./session";
 import { convertString, padStart, write16le, write32le } from "./util";
 
 type Emitter = (coverageData: ArrayBuffer) => void;
+type ThreadFilter = (thread: ThreadDetails) => boolean;
 
 /**
  * Class used to collect coverage information in DynamoRio DRCOV format suitable to be imported into IDA lighthouse or
  * Ghidra Dragondance.
  */
-class Coverage {
+class Coverage implements CoverageSession {
     /**
-     * Flushes out any buffered events. Useful when you don't want to wait until the next `queueDrainInterval` tick.
-     * Calls the underlying Stalker
-     * session.
+     * Module filter which selects all modules
+     * @param module The module to filter
      */
-    public static flush(): void {
-        Stalker.flush();
+    public static AllModules(module: Module): boolean {
+        return true;
     }
 
     /**
-     * Starts collecting coverage information for the given thread. Provides a super-set of the functionality of
-     * Stalker.follow so that other information can be collected at the same time if required.
-     *
-     * @param threadId Thread ID to start following the execution of, or the
-     *                 current thread if omitted.
-     * @param options Options to customize the instrumentation. Note that the value of 'compile' is implicitly set to
-     *                true as this is required to collect coverage information. Note that although this parameter is
-     *                optional to remain consistent (and retain parameter order) with Stalker, unless options are
-     *                provided, no coverage information will be collected.
+     * Thread filter which selects all thread
+     * @param threadDetails The thread to filter
      */
-    public static follow(threadId?: ThreadId, options?: CoverageOptions): void {
-        const stalkerOptions: StalkerOptions = {};
-
-        if (options !== undefined) {
-            stalkerOptions.data = options.data;
-
-            stalkerOptions.events = options.events === undefined ? {} : options?.events;
-            stalkerOptions.events.compile = true;
-
-            const defaultModuleFilter: ModuleMapFilter = (m: Module): boolean => true;
-            const moduleFilter: ModuleMapFilter = options.moduleFilter ?? defaultModuleFilter;
-
-            const includedModules: Module[] = new ModuleMap(moduleFilter).values();
-            Process.enumerateModules()
-                .forEach((m: Module): void => {
-                if (!moduleFilter(m)) {
-                    Stalker.exclude(m);
-                }
-            });
-            stalkerOptions.onCallSummary = options.onCallSummary;
-
-            const coverage: Coverage = new Coverage(
-                (coverageData: ArrayBuffer): void => {
-                    options.onCoverage(coverageData);
-                },
-                includedModules);
-
-            stalkerOptions.onReceive = (events: ArrayBuffer): void => {
-                const parsed: StalkerEventFull[] = Stalker.parse(events, {
-                        annotate: true,
-                        stringify: false,
-                    }) as StalkerEventFull[];
-
-                parsed.forEach((e: StalkerEventFull): void => {
-                    const type: string = e[Coverage.COMPILE_EVENT_TYPE_INDEX] as string;
-                    if (type.toString() === Coverage.COMPILE_EVENT_TYPE.toString()) {
-                        const start: NativePointer = e[Coverage.COMPILE_EVENT_START_INDEX] as NativePointer;
-                        const end: NativePointer = e[Coverage.COMPILE_EVENT_END_INDEX]  as NativePointer;
-                        coverage.emitEvent(start, end);
-                    }
-                });
-
-                if (options.onReceive !== undefined) {
-                    options.onReceive(events);
-                }
-            };
-            stalkerOptions.transform = options.transform;
-
-            coverage.emitHeader();
-        }
-
-        Stalker.follow(threadId, stalkerOptions);
+    public static AllThreads(threadDetails: ThreadDetails): boolean {
+        return true;
     }
 
     /**
-     * Stops collecting coverage information for the given thread, as well as stopping Stalking the thread.
-     *
-     * @param threadId Thread ID to stop following the execution of, or the
-     *                 current thread if omitted.
+     * Thread filter which selects only the current thread
+     * @param threadDetails The thread to filter
      */
-    public static unfollow(threadId?: ThreadId): void {
-        Stalker.unfollow();
+    public static CurrentThread(threadDetails: ThreadDetails): boolean {
+        return threadDetails.id === Process.getCurrentThreadId();
+    }
+
+    /**
+     * Starts collecting coverage information for the given thread.
+     *
+     * @param options Options to customize the instrumentation.
+     */
+    public static follow(options: CoverageOptions): CoverageSession {
+        const moduleFilter: ModuleMapFilter = (m: Module): boolean => options.moduleFilter(m);
+        const threadFilter: ThreadFilter = (t: ThreadDetails): boolean => options.threadFilter(t);
+
+        const coverage: Coverage = new Coverage(
+            (coverageData: ArrayBuffer): void => {
+                options.onCoverage(coverageData);
+            },
+            moduleFilter,
+            threadFilter);
+
+        return coverage;
+    }
+
+    /**
+     * Module filter which selects only the main module
+     * @param module The module to filter
+     */
+    public static MainModule(module: Module): boolean {
+        return Process.enumerateModules()[0].path === module.path;
     }
 
     /**
@@ -160,9 +129,61 @@ class Coverage {
      */
     private readonly modules: Module[];
 
-    private constructor(emit: Emitter, modules: Module[]) {
+    /**
+     * An array of the thread to include within the coverage information
+     */
+    private readonly threads: ThreadDetails[];
+
+    private constructor(emit: Emitter, moduleFilter: ModuleMapFilter, threadFilter: ThreadFilter) {
         this.emit = emit;
-        this.modules = modules;
+        const map: ModuleMap = new ModuleMap((m: Module): boolean => {
+                if (moduleFilter(m)) {
+                    return true;
+                }
+
+                Stalker.exclude(m);
+
+                return false;
+
+            });
+        this.modules = map.values();
+        this.threads = Process.enumerateThreads()
+            .filter(threadFilter);
+
+        const stalkerOptions: StalkerOptions = {
+            events: {
+                compile: true,
+            },
+            onReceive: (events: ArrayBuffer): void => {
+                const parsed: StalkerEventFull[] = Stalker.parse(events, {
+                        annotate: true,
+                        stringify: false,
+                    }) as StalkerEventFull[];
+
+                parsed.forEach((e: StalkerEventFull): void => {
+                    const type: string = e[Coverage.COMPILE_EVENT_TYPE_INDEX] as string;
+                    if (type.toString() === Coverage.COMPILE_EVENT_TYPE.toString()) {
+                        const start: NativePointer = e[Coverage.COMPILE_EVENT_START_INDEX] as NativePointer;
+                        const end: NativePointer = e[Coverage.COMPILE_EVENT_END_INDEX]  as NativePointer;
+                        this.emitEvent(start, end);
+                    }
+                });
+            },
+        };
+        this.emitHeader();
+        this.threads.forEach((t: ThreadDetails): void => {
+            Stalker.follow(t.id, stalkerOptions);
+        });
+    }
+
+    /**
+     * Stop the collection of coverage data
+     */
+    public stop(): void {
+        this.threads.forEach((t: ThreadDetails): void => {
+            Stalker.unfollow(t.id);
+        });
+        Stalker.flush();
     }
 
     /**
