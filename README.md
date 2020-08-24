@@ -83,11 +83,11 @@ const mainReplacement = new NativeCallback(
         const coverageFile = new File(coverageFileName, "wb+");
 
         const coverage = Coverage.start({
-            moduleFilter: (m) => Coverage.MainModule(m),
+            moduleFilter: (m) => Coverage.mainModule(m),
             onCoverage: (coverageData) => {
                 coverageFile.write(coverageData);
             },
-            threadFilter: (t) => Coverage.CurrentThread(t),
+            threadFilter: (t) => Coverage.currentThread(t),
         });
 
         const ret = mainFunctionPointer(argc, argv) as number;
