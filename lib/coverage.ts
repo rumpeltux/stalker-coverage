@@ -209,6 +209,12 @@ class Coverage implements CoverageSession {
      * The function passed in the 'onCoverage' property in the options used to receive coverage information
      */
     private readonly emit: CoverageEmitter;
+
+    /**
+     * Map to hold collected coverage data for the purposes of de-duplication
+     */
+    private readonly events: Map<NativePointer, NativePointer> = new Map<NativePointer, NativePointer>();
+
     /**
      * An array of the modules to include within the coverage information
      */
@@ -250,12 +256,11 @@ class Coverage implements CoverageSession {
                     if (type.toString() === Coverage.COMPILE_EVENT_TYPE.toString()) {
                         const start = e[Coverage.COMPILE_EVENT_START_INDEX] as NativePointer;
                         const end = e[Coverage.COMPILE_EVENT_END_INDEX]  as NativePointer;
-                        this.emitEvent(start, end);
+                        this.events.set(start, end);
                     }
                 });
             },
         };
-        this.emitHeader();
         this.threads.forEach((t) => {
             Stalker.follow(t.id, stalkerOptions);
         });
@@ -269,6 +274,12 @@ class Coverage implements CoverageSession {
             Stalker.unfollow(t.id);
         });
         Stalker.flush();
+        this.emitHeader();
+
+        const eventList = Array.from(this.events.entries());
+        for (const [start, end] of eventList) {
+            this.emitEvent(start, end);
+        }
     }
 
     /**
