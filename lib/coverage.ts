@@ -216,6 +216,11 @@ class Coverage implements CoverageSession {
     private readonly events: Map<NativePointer, NativePointer> = new Map<NativePointer, NativePointer>();
 
     /**
+     * Map containing the memory ranges for each module we are collecting coverage data for
+     */
+    private readonly memoryRanges: Map<NativePointer, RangeDetails[]> = new Map<NativePointer, RangeDetails[]>();
+
+    /**
      * An array of the modules to include within the coverage information
      */
     private readonly modules: Module[];
@@ -238,6 +243,10 @@ class Coverage implements CoverageSession {
 
             });
         this.modules = map.values();
+        for (const module of this.modules) {
+            const ranges = module.enumerateRanges("--x");
+            this.memoryRanges.set(module.base, ranges);
+        }
         this.threads = Process.enumerateThreads()
             .filter(threadFilter);
 
@@ -309,6 +318,10 @@ class Coverage implements CoverageSession {
             const length = end.sub(start)
                 .toInt32();
 
+            if (!this.isInRange(base, start, end)) {
+                return;
+            }
+
             /*
              * struct _GumStalkerCoverageEntry {
              *     guint32 start;
@@ -323,7 +336,8 @@ class Coverage implements CoverageSession {
 
             const buf = ArrayBuffer.wrap(memory, Coverage.EVENT_TOTAL_SIZE);
             this.emit(buf);
-            break;
+
+            return;
         }
     }
 
@@ -376,6 +390,38 @@ class Coverage implements CoverageSession {
         const line = elements.join(", ");
         this.emit(Coverage.convertString(line));
         this.emit(Coverage.convertString("\n"));
+    }
+
+    /**
+     * Function to determine whether a coverage entry resides in a valid range
+     * associated with a given module.
+     * @param base The base address of the module
+     * @param start The start of the basic block
+     * @param end The end of the basic block
+     */
+    private isInRange(
+        base: NativePointer,
+        start: NativePointer,
+        end: NativePointer): boolean {
+        const ranges = this.memoryRanges.get(base);
+        if (ranges === undefined) {
+            return false;
+        }
+
+        for (const range of ranges) {
+            if (end.compare(range.base) < 0) {
+                continue;
+            }
+
+            const limit = range.base.add(range.size);
+            if (start.compare(limit) >= 0) {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
     }
 }
 
