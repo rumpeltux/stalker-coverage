@@ -5,6 +5,24 @@ type CoverageEmitter = (coverageData: ArrayBuffer) => void;
 type CoverageThreadFilter = (thread: ThreadDetails) => boolean;
 
 /**
+ * Interface to describe the format of individual coverage events within the file
+ */
+interface ICoverageEvent {
+    /**
+     * The length of the basic block in bytes
+     */
+    length: number;
+    /**
+     * The index of the associated module (included in the header)
+     */
+    moduleId: number;
+    /**
+     * The offset of the basic block from the module base
+     */
+    offset: number;
+}
+
+/**
  * Class used to collect coverage information in DynamoRio DRCOV format suitable to be imported into IDA lighthouse or
  * Ghidra Dragondance.
  */
@@ -283,22 +301,26 @@ class Coverage implements CoverageSession {
             Stalker.unfollow(t.id);
         });
         Stalker.flush();
-        this.emitHeader();
-
         const eventList = Array.from(this.events.entries());
-        for (const [start, end] of eventList) {
-            this.emitEvent(start, end);
+        const convertedEvents = eventList.map(([start, end]) => this.convertEvent(start, end));
+        const nonNullEvents = convertedEvents.filter((e) => e !== undefined);
+
+        this.emitHeader(nonNullEvents.length);
+        for (const convertedEvent of nonNullEvents) {
+            if (convertedEvent !== undefined) {
+                this.emitEvent(convertedEvent);
+            }
         }
     }
 
     /**
-     * Function used to emit a coverage event, when called with parameters parsed from StalkerCompileEventFull in the
-     * 'onRecevied' function of stalker.
+     * Function used to covert a coverage event, when called with parameters parsed from
+     * StalkerCompileEventFull in the 'onRecevied' function of stalker.
      *
      * @param start The address of the start of the compiled block.
      * @param end The address of the end of the compile block.
      */
-    private emitEvent(start: NativePointer, end: NativePointer): void {
+    private convertEvent(start: NativePointer, end: NativePointer): ICoverageEvent | undefined {
         for (let i = 0; i < this.modules.length; i += 1) {
             const base = this.modules[i].base;
             const size = this.modules[i].size;
@@ -319,26 +341,42 @@ class Coverage implements CoverageSession {
                 .toInt32();
 
             if (!this.isInRange(base, start, end)) {
-                return;
+                return undefined;
             }
 
-            /*
-             * struct _GumStalkerCoverageEntry {
-             *     guint32 start;
-             *     guint16 size;
-             *     guint16 mod_id;
-             * };
-             */
-            const memory = Memory.alloc(Coverage.EVENT_TOTAL_SIZE);
-            Coverage.write32le(memory.add(Coverage.EVENT_START_OFFSET), offset);
-            Coverage.write16le(memory.add(Coverage.EVENT_SIZE_OFFSET), length);
-            Coverage.write16le(memory.add(Coverage.EVENT_MODULE_OFFSET), i);
+            const event: ICoverageEvent = {
+                length,
+                moduleId: i,
+                offset,
+            };
 
-            const buf = ArrayBuffer.wrap(memory, Coverage.EVENT_TOTAL_SIZE);
-            this.emit(buf);
-
-            return;
+            return event;
         }
+
+        return undefined;
+    }
+
+    /**
+     * Function used to emit a coverage event, when called with parameters parsed from StalkerCompileEventFull in the
+     * 'onRecevied' function of stalker.
+     *
+     * @param event The event to emit
+     */
+    private emitEvent(event: ICoverageEvent): void {
+        /*
+         * struct {
+         *     guint32 start;
+         *     guint16 size;
+         *     guint16 mod_id;
+         * };
+         */
+        const memory = Memory.alloc(Coverage.EVENT_TOTAL_SIZE);
+        Coverage.write32le(memory.add(Coverage.EVENT_START_OFFSET), event.offset);
+        Coverage.write16le(memory.add(Coverage.EVENT_SIZE_OFFSET), event.length);
+        Coverage.write16le(memory.add(Coverage.EVENT_MODULE_OFFSET), event.moduleId);
+
+        const buf = ArrayBuffer.wrap(memory, Coverage.EVENT_TOTAL_SIZE);
+        this.emit(buf);
     }
 
     /**
@@ -346,8 +384,9 @@ class Coverage implements CoverageSession {
      * format includes a number of events in the header. This is obviously not ideally suited to streaming data, so we
      * instead write the value of -1. This does not impair the operation of dragondance (which ignores the field), but
      * changes may be required for IDA lighthouse to accept this modification.
+     * @param events The number of coverage events emitted in the file
      */
-    private emitHeader(): void {
+    private emitHeader(events: number): void {
         this.emit(Coverage.convertString("DRCOV VERSION: 2\n"));
         this.emit(Coverage.convertString("DRCOV FLAVOR: frida\n"));
         this.emit(Coverage.convertString(
@@ -360,7 +399,7 @@ class Coverage implements CoverageSession {
             this.emitModule(idx, m);
         });
 
-        this.emit(Coverage.convertString("BB Table: -1 bbs\n"));
+        this.emit(Coverage.convertString(`BB Table: ${events} bbs\n`));
     }
 
     /**
@@ -388,12 +427,11 @@ class Coverage implements CoverageSession {
         const path = module.path;
         const elements = [moduleId, base, end, entry, checksum, timeStamp, path];
         const line = elements.join(", ");
-        this.emit(Coverage.convertString(line));
-        this.emit(Coverage.convertString("\n"));
+        this.emit(Coverage.convertString(`${line}\n`));
     }
 
     /**
-     * Function to determine whether a coverage entry resides in a valid range
+     * Function to determine whether a coverage event resides in a valid range
      * associated with a given module.
      * @param base The base address of the module
      * @param start The start of the basic block
