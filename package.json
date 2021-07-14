@@ -1,12 +1,20 @@
 {
-  "name": "stalker-coverage",
-  "version": "1.0.0",
+  "name": "@worksbutnottested/stalker-coverage",
+  "version": "1.0.1",
   "description": "Stalker coverage library",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
     "/dist/"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:WorksButNotTested/stalker-coverage.git"
+  },
+  "publishConfig": {
+    "cache": "~/.npm",
+    "registry": "https://npm.pkg.github.com/@worksbutnottested"
+  },
   "scripts": {
     "prepare": "npm run build",
     "lint": "tslint -p tslint.json",

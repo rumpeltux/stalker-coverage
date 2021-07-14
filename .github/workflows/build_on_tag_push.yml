@@ -19,23 +19,16 @@ jobs:
         registry-url: 'https://npm.pkg.github.com'
         scope: '@worksbutnottested'
 
-    # Managed NPM
     - name: Download dependencies
       run: |
         npm install
-      env:
-        NODE_AUTH_TOKEN: ${{secrets.NPM_PUBLISH}}
-
-    - name: Install dependencies
-      run: |
-        npm rebuild && npm run prepare --if-present
 
     - name: Build managed package
       run: |
         npm run build
         npm publish
       env:
-        NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH }}
+        NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Save log file from managed build
       if: ${{ failure() }}
@@ -44,7 +37,6 @@ jobs:
         name: npm-log-managed-build
         path: /home/runner/.npm/_logs
 
-    # Release
     - name: Create Release
       id: create_release
       uses: actions/create-release@v1
